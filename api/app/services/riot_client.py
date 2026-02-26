@@ -1,4 +1,5 @@
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -28,6 +29,17 @@ class RiotClient:
 
     async def get_match(self, match_id: str) -> dict[str, Any]:
         endpoint = f"/lol/match/v5/matches/{match_id}"
+        data = await self._get(endpoint=endpoint)
+
+        if not isinstance(data, dict):
+            raise self.RiotAPIError(status_code=502, message="Unexpected Riot API response format.")
+
+        return data
+
+    async def get_account_by_riot_id(self, game_name: str, tag_line: str) -> dict[str, Any]:
+        encoded_game_name = quote(game_name, safe="")
+        encoded_tag_line = quote(tag_line, safe="")
+        endpoint = f"/riot/account/v1/accounts/by-riot-id/{encoded_game_name}/{encoded_tag_line}"
         data = await self._get(endpoint=endpoint)
 
         if not isinstance(data, dict):
