@@ -21,19 +21,18 @@ async def get_player_profile_by_riot_id(
     normalized_tag_line = tag_line.lstrip("#")
 
     try:
-        account = await client.get_account_by_riot_id(game_name=game_name, tag_line=normalized_tag_line)
-        puuid = str(account.get("puuid", ""))
-        if not puuid:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Riot account response did not include a puuid.",
-            )
+        account, puuid = await _resolve_account_and_puuid(
+            client=client,
+            game_name=game_name,
+            tag_line=normalized_tag_line,
+        )
 
         summoner = await client.get_summoner_by_puuid(puuid=puuid)
-        summoner_id = str(summoner.get("id", ""))
-        ranked_entries = []
-        if summoner_id:
-            ranked_entries = await client.get_league_entries_by_summoner(encrypted_summoner_id=summoner_id)
+        ranked_lookup = await _load_ranked_entries(
+            client=client,
+            puuid=puuid,
+            summoner_id=str(summoner.get("id", "")),
+        )
     except RiotClient.RiotAPIError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
@@ -51,23 +50,30 @@ async def get_player_profile_by_riot_id(
                 wins=int(entry.get("wins", 0)),
                 losses=int(entry.get("losses", 0)),
             )
-            for entry in ranked_entries
+            for entry in ranked_lookup["entries"]
         ],
     )
 
     return profile.model_dump()
 
 
-@router.get("/{puuid}/summary")
-async def get_player_summary(
-    puuid: str,
+@router.get("/by-riot-id/{game_name}/{tag_line}/summary")
+async def get_player_summary_by_riot_id(
+    game_name: str,
+    tag_line: str,
     start: int = Query(default=0, ge=0),
-    count: int = Query(default=20, ge=1, le=50),
+    count: int = Query(default=10, ge=1, le=20),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     client = _build_client_or_raise(settings)
+    normalized_tag_line = tag_line.lstrip("#")
 
     try:
+        account, puuid = await _resolve_account_and_puuid(
+            client=client,
+            game_name=game_name,
+            tag_line=normalized_tag_line,
+        )
         match_ids = await client.get_match_ids_by_puuid(puuid=puuid, start=start, count=count)
         matches = await _load_matches(client=client, match_ids=match_ids)
     except RiotClient.RiotAPIError as exc:
@@ -75,6 +81,9 @@ async def get_player_summary(
 
     summary = build_player_summary(puuid=puuid, matches=matches)
     return {
+        "game_name": str(account.get("gameName", game_name)),
+        "tag_line": str(account.get("tagLine", normalized_tag_line)),
+        "puuid": puuid,
         "region": settings.riot_region_routing,
         "start": start,
         "count": count,
@@ -82,17 +91,24 @@ async def get_player_summary(
     }
 
 
-@router.get("/{puuid}/performance-trend")
+@router.get("/by-riot-id/{game_name}/{tag_line}/performance-trend")
 async def get_player_performance_trend(
-    puuid: str,
+    game_name: str,
+    tag_line: str,
     start: int = Query(default=0, ge=0),
-    count: int = Query(default=20, ge=5, le=50),
+    count: int = Query(default=10, ge=5, le=20),
     recent_window: int = Query(default=5, ge=3, le=10),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     client = _build_client_or_raise(settings)
+    normalized_tag_line = tag_line.lstrip("#")
 
     try:
+        account, puuid = await _resolve_account_and_puuid(
+            client=client,
+            game_name=game_name,
+            tag_line=normalized_tag_line,
+        )
         match_ids = await client.get_match_ids_by_puuid(puuid=puuid, start=start, count=count)
         matches = await _load_matches(client=client, match_ids=match_ids)
     except RiotClient.RiotAPIError as exc:
@@ -100,6 +116,9 @@ async def get_player_performance_trend(
 
     trend = build_performance_trend(puuid=puuid, matches=matches, recent_window=recent_window)
     return {
+        "game_name": str(account.get("gameName", game_name)),
+        "tag_line": str(account.get("tagLine", normalized_tag_line)),
+        "puuid": puuid,
         "region": settings.riot_region_routing,
         "start": start,
         "count": count,
@@ -126,5 +145,34 @@ async def _load_matches(client: RiotClient, match_ids: list[str]) -> list[dict[s
     if not match_ids:
         return []
 
-    tasks = [client.get_match(match_id) for match_id in match_ids]
+    semaphore = asyncio.Semaphore(3)
+
+    async def _load_one(match_id: str) -> dict[str, Any]:
+        async with semaphore:
+            return await client.get_match(match_id)
+
+    tasks = [_load_one(match_id) for match_id in match_ids]
     return await asyncio.gather(*tasks)
+
+
+async def _load_ranked_entries(client: RiotClient, puuid: str, summoner_id: str) -> dict[str, Any]:
+    by_puuid_entries = await client.get_league_entries_by_puuid(encrypted_puuid=puuid)
+    if by_puuid_entries:
+        return {"entries": by_puuid_entries}
+
+    if not summoner_id:
+        return {"entries": []}
+
+    by_summoner_entries = await client.get_league_entries_by_summoner(encrypted_summoner_id=summoner_id)
+    return {"entries": by_summoner_entries}
+
+
+async def _resolve_account_and_puuid(client: RiotClient, game_name: str, tag_line: str) -> tuple[dict[str, Any], str]:
+    account = await client.get_account_by_riot_id(game_name=game_name, tag_line=tag_line)
+    puuid = str(account.get("puuid", ""))
+    if not puuid:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Riot account response did not include a puuid.",
+        )
+    return account, puuid

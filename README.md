@@ -97,9 +97,8 @@ It installs `api/requirements-dev.txt` and runs `pytest -q`.
 
 ## Initial Endpoints
 - `GET /health`
-- `GET /v1/matches/by-puuid/{puuid}?start=0&count=20`
 - `GET /v1/matches/by-riot-id/{game_name}/{tag_line}?start=0&count=20`
 - `GET /v1/matches/{match_id}` (returns raw Riot match + analytics summary)
 - `GET /v1/players/by-riot-id/{game_name}/{tag_line}/profile`
-- `GET /v1/players/{puuid}/summary?start=0&count=20`
-- `GET /v1/players/{puuid}/performance-trend?start=0&count=20&recent_window=5`
+- `GET /v1/players/by-riot-id/{game_name}/{tag_line}/summary?start=0&count=20`
+- `GET /v1/players/by-riot-id/{game_name}/{tag_line}/performance-trend?start=0&count=20&recent_window=5`

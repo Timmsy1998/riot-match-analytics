@@ -1,3 +1,4 @@
+import asyncio
 from typing import Any
 from urllib.parse import quote
 
@@ -53,16 +54,29 @@ class RiotClient:
 
     async def get_summoner_by_puuid(self, puuid: str) -> dict[str, Any]:
         endpoint = f"/lol/summoner/v4/summoners/by-puuid/{quote(puuid, safe='')}"
-        data = await self._get_platform(endpoint=endpoint)
+        data = await self._get_platform_then_region(endpoint=endpoint)
 
         if not isinstance(data, dict):
             raise self.RiotAPIError(status_code=502, message="Unexpected Riot API response format.")
 
         return data
 
+    async def get_league_entries_by_puuid(self, encrypted_puuid: str) -> list[dict[str, Any]]:
+        endpoint = f"/lol/league/v4/entries/by-puuid/{quote(encrypted_puuid, safe='')}"
+        data = await self._get_platform_then_region(endpoint=endpoint)
+
+        if not isinstance(data, list):
+            raise self.RiotAPIError(status_code=502, message="Unexpected Riot API response format.")
+
+        entries: list[dict[str, Any]] = []
+        for item in data:
+            if isinstance(item, dict):
+                entries.append(item)
+        return entries
+
     async def get_league_entries_by_summoner(self, encrypted_summoner_id: str) -> list[dict[str, Any]]:
         endpoint = f"/lol/league/v4/entries/by-summoner/{quote(encrypted_summoner_id, safe='')}"
-        data = await self._get_platform(endpoint=endpoint)
+        data = await self._get_platform_then_region(endpoint=endpoint)
 
         if not isinstance(data, list):
             raise self.RiotAPIError(status_code=502, message="Unexpected Riot API response format.")
@@ -84,12 +98,42 @@ class RiotClient:
             )
         return await self._get(base_url=self.platform_base_url, endpoint=endpoint, params=params)
 
-    async def _get(self, base_url: str, endpoint: str, params: dict[str, Any] | None = None) -> Any:
+    async def _get_platform_then_region(self, endpoint: str, params: dict[str, Any] | None = None) -> Any:
+        if not self.platform_base_url:
+            return await self._get_region(endpoint=endpoint, params=params)
+
+        try:
+            return await self._get_platform(endpoint=endpoint, params=params)
+        except RiotClient.RiotAPIError as platform_error:
+            if platform_error.status_code not in {400, 403, 404}:
+                raise
+            return await self._get_region(endpoint=endpoint, params=params)
+
+    async def _get(
+        self,
+        base_url: str,
+        endpoint: str,
+        params: dict[str, Any] | None = None,
+        max_retries: int = 2,
+    ) -> Any:
         headers = {"X-Riot-Token": self.api_key}
         timeout = httpx.Timeout(10.0)
 
         async with httpx.AsyncClient(base_url=base_url, headers=headers, timeout=timeout) as client:
-            response = await client.get(endpoint, params=params)
+            attempt = 0
+            while True:
+                response = await client.get(endpoint, params=params)
+                if response.status_code != 429 or attempt >= max_retries:
+                    break
+
+                retry_after_raw = response.headers.get("Retry-After", "1")
+                try:
+                    retry_after_seconds = float(retry_after_raw)
+                except ValueError:
+                    retry_after_seconds = 1.0
+
+                await asyncio.sleep(max(0.2, retry_after_seconds))
+                attempt += 1
 
         if response.status_code >= 400:
             message = self._message_for_error(response.status_code)
