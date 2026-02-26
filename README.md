@@ -18,12 +18,19 @@ Riot API Match Analytics Microservice for League of Legends.
 │   │   │   └── config.py
 │   │   ├── routers/
 │   │   │   ├── health.py
-│   │   │   └── matches.py
+│   │   │   ├── matches.py
+│   │   │   └── players.py
 │   │   ├── services/
+│   │   │   ├── match_analytics.py
+│   │   │   ├── player_analytics.py
 │   │   │   └── riot_client.py
 │   │   └── main.py
 │   ├── tests/
-│   │   └── test_health.py
+│   │   ├── test_health.py
+│   │   ├── test_match_analytics.py
+│   │   ├── test_matches_router.py
+│   │   ├── test_player_analytics.py
+│   │   └── test_players_router.py
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   └── requirements-dev.txt
@@ -93,3 +100,6 @@ It installs `api/requirements-dev.txt` and runs `pytest -q`.
 - `GET /v1/matches/by-puuid/{puuid}?start=0&count=20`
 - `GET /v1/matches/by-riot-id/{game_name}/{tag_line}?start=0&count=20`
 - `GET /v1/matches/{match_id}` (returns raw Riot match + analytics summary)
+- `GET /v1/players/by-riot-id/{game_name}/{tag_line}/profile`
+- `GET /v1/players/{puuid}/summary?start=0&count=20`
+- `GET /v1/players/{puuid}/performance-trend?start=0&count=20&recent_window=5`
