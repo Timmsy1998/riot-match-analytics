@@ -1,21 +1,54 @@
-# riot-match-analytics
+# Riot Match Analytics
 
-Riot API Match Analytics Microservice for League of Legends.
+A League of Legends analytics microservice built on the Riot API.
 
-## Tech Stack
+Created by **James Timms (Timmsy)**.
+
+## Overview
+This service ingests Riot match data and exposes practical analytics endpoints for player and match evaluation.
+
+I built it as a backend-focused project to demonstrate:
+- clear API design
+- practical data transformation
+- production-minded engineering choices
+- test-first reliability with automated checks
+
+## Why I Built It This Way
+### 1) Riot ID first, not PUUID first
+Most users do not know their PUUID, so public endpoints accept `game_name` and `tag_line`. The service resolves PUUID internally and keeps that complexity out of the client.
+
+### 2) Separate routing domains in Riot API calls
+Riot has both regional and platform routing concerns. Match/account style calls and league/summoner style calls are handled explicitly to reduce integration mistakes and make debugging easier.
+
+### 3) Analytics logic separated from route handlers
+Pure analytics functions live in services (`match_analytics.py`, `player_analytics.py`) so they can be tested independently of HTTP. This keeps route files thin and lowers regression risk.
+
+### 4) Rate-limit aware behavior
+Higher-cost endpoints such as summary and trend can trigger many Riot calls. Concurrency is constrained and 429 retry handling is implemented with `Retry-After` support.
+
+### 5) Commit-time and CI testing
+I wanted fast confidence while iterating, so tests run:
+- locally via git hooks before commit
+- in CI on push and pull request
+
+## Stack
 - Python 3.12
 - FastAPI
 - Uvicorn
 - HTTPX
+- Pytest
 - Docker + Docker Compose
 
-## Project Structure
+## Project Layout
 ```text
 .
 ├── api/
 │   ├── app/
 │   │   ├── core/
 │   │   │   └── config.py
+│   │   ├── models/
+│   │   │   ├── match_summary.py
+│   │   │   └── player_analytics.py
 │   │   ├── routers/
 │   │   │   ├── health.py
 │   │   │   ├── matches.py
@@ -34,35 +67,37 @@ Riot API Match Analytics Microservice for League of Legends.
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   └── requirements-dev.txt
+├── .githooks/
+├── .github/workflows/
+├── scripts/
 ├── .env
 ├── .env.example
 └── docker-compose.yml
 ```
 
-## Environment Variables
-Copy `.env.example` to `.env` and set values.
+## Configuration
+Copy `.env.example` to `.env`.
 
-- `RIOT_API_KEY`: Riot developer API key
-- `RIOT_REGION_ROUTING`: Regional routing value (`europe`, `americas`, `asia`, `sea`)
-- `RIOT_PLATFORM_ROUTING`: Platform routing value (`euw1`, `na1`, etc.)
-- `APP_ENV`: Environment name (`development` by default)
-- `APP_HOST`: Host binding (`0.0.0.0` by default)
-- `APP_PORT`: Port (`8000` by default)
+Required variables:
+- `RIOT_API_KEY`
+- `RIOT_REGION_ROUTING` (example: `europe`)
+- `RIOT_PLATFORM_ROUTING` (example: `euw1`)
 
-## Run with Docker
-From repo root:
+App variables:
+- `APP_ENV` (default: `development`)
+- `APP_HOST` (default: `0.0.0.0`)
+- `APP_PORT` (default: `8000`)
 
+## Running the Service
+### Docker (recommended)
 ```bash
 docker compose up --build
 ```
 
-Service URL:
-- `http://localhost:8000`
-- Swagger docs: `http://localhost:8000/docs`
+- API: `http://localhost:8000`
+- Docs: `http://localhost:8000/docs`
 
-## Run Locally (without Docker)
-From repo root:
-
+### Local (without Docker)
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
@@ -71,34 +106,48 @@ cd api
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-## Run Tests
-From repo root:
-
+## Testing
+### Run tests manually
 ```bash
 docker compose run --rm riot-match-analytics-test
 ```
 
-## Git Test Workflow
-### Local (before every commit)
-Install the repo git hooks once:
-
+### Pre-commit test hook
 ```bash
 ./scripts/install-git-hooks.sh
 ```
 
-This enables `.githooks/pre-commit`, which runs `pytest -q` before each commit.
-The hook runs tests inside Docker using `docker compose run --rm riot-match-analytics-test`.
+This configures `.githooks/pre-commit` to run the Dockerized pytest suite before each commit.
 
-### CI (on push and pull request)
-GitHub Actions workflow is defined in:
+### CI
+Workflow file:
 - `.github/workflows/test.yml`
 
-It installs `api/requirements-dev.txt` and runs `pytest -q`.
+CI installs dev dependencies and runs pytest for each push and pull request.
 
-## Initial Endpoints
+## API Endpoints
+### Health
 - `GET /health`
+
+### Matches
 - `GET /v1/matches/by-riot-id/{game_name}/{tag_line}?start=0&count=20`
-- `GET /v1/matches/{match_id}` (returns raw Riot match + analytics summary)
+- `GET /v1/matches/{match_id}`
+
+### Players
 - `GET /v1/players/by-riot-id/{game_name}/{tag_line}/profile`
-- `GET /v1/players/by-riot-id/{game_name}/{tag_line}/summary?start=0&count=20`
-- `GET /v1/players/by-riot-id/{game_name}/{tag_line}/performance-trend?start=0&count=20&recent_window=5`
+- `GET /v1/players/by-riot-id/{game_name}/{tag_line}/summary?start=0&count=10`
+- `GET /v1/players/by-riot-id/{game_name}/{tag_line}/performance-trend?start=0&count=10&recent_window=5`
+
+## Current Scope
+Implemented:
+- Riot account resolution by Riot ID + tag
+- Match retrieval and match summary analytics
+- Player profile, summary, and trend analytics
+- Ranked fallback lookup support (`by-puuid` then `by-summoner`)
+- Automated tests and Docker-based workflow
+
+Planned next:
+- timeline analytics
+- champion pool depth metrics
+- caching layer for repeated profile/match queries
+- auth/rate limiting for public deployment
