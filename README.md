@@ -68,10 +68,25 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 From repo root:
 
 ```bash
-source .venv/bin/activate
-cd api
-pytest -q
+docker compose run --rm riot-match-analytics-test
 ```
+
+## Git Test Workflow
+### Local (before every commit)
+Install the repo git hooks once:
+
+```bash
+./scripts/install-git-hooks.sh
+```
+
+This enables `.githooks/pre-commit`, which runs `pytest -q` before each commit.
+The hook runs tests inside Docker using `docker compose run --rm riot-match-analytics-test`.
+
+### CI (on push and pull request)
+GitHub Actions workflow is defined in:
+- `.github/workflows/test.yml`
+
+It installs `api/requirements-dev.txt` and runs `pytest -q`.
 
 ## Initial Endpoints
 - `GET /health`

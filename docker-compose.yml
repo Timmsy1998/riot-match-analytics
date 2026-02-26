@@ -2,9 +2,23 @@ services:
   riot-match-analytics-api:
     build:
       context: ./api
+      args:
+        INSTALL_DEV: "false"
     container_name: riot-match-analytics-api
     ports:
       - "8000:8000"
     env_file:
       - .env
     restart: unless-stopped
+
+  riot-match-analytics-test:
+    build:
+      context: ./api
+      args:
+        INSTALL_DEV: "true"
+    env_file:
+      - .env
+    working_dir: /app
+    volumes:
+      - ./api:/app
+    command: pytest -q
