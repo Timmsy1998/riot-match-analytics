@@ -76,3 +76,4 @@ pytest -q
 ## Initial Endpoints
 - `GET /health`
 - `GET /v1/matches/by-puuid/{puuid}?start=0&count=20`
+- `GET /v1/matches/{match_id}` (returns raw Riot match + analytics summary)

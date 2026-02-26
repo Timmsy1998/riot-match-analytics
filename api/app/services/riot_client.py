@@ -26,6 +26,15 @@ class RiotClient:
 
         return [str(match_id) for match_id in data]
 
+    async def get_match(self, match_id: str) -> dict[str, Any]:
+        endpoint = f"/lol/match/v5/matches/{match_id}"
+        data = await self._get(endpoint=endpoint)
+
+        if not isinstance(data, dict):
+            raise self.RiotAPIError(status_code=502, message="Unexpected Riot API response format.")
+
+        return data
+
     async def _get(self, endpoint: str, params: dict[str, Any] | None = None) -> Any:
         headers = {"X-Riot-Token": self.api_key}
         timeout = httpx.Timeout(10.0)
